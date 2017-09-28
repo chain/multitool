@@ -33,7 +33,7 @@ Plain Schnorr uncompressed signature protocol (similar to EdDSA).
 * `x` — secret scalar representing a private key.
 * `P` — public key, such that `P == x·G`.
 
-Algorithms:
+Definitions:
 
     schnorr = protocol {
         name:  "Schnorr"
@@ -260,7 +260,7 @@ This is a part of the CryptoNote/Monero protocol that is effectively a ring vers
 * `P` — public key, such that `P == x·G`.
 * `I` — key image, such that `I == x·PointHash(P)`.
 
-Algorithms:
+Definitions:
 
     trs = protocol {
         name:  "TraceableRingSignature"
@@ -329,7 +329,59 @@ Algorithms:
 
 ## Abstract Range Proof
 
-TBD.
+This is an abstract template for various rangeproofs.
+Using it standalone is not possible because it defers the choice of commitments to be signed
+to the higher-level protocols (see asset range proof, value range proof, issuance asset range proof)
+that must ensure commitments are not malleabile with respect to the proof.
+
+* `NR` — number of rings
+* `NI` — number of items per ring
+* `NS` — number of statements per item
+* `NX` — number of secrets per item
+* `t = 0..NR-1` - index of a ring
+* `i = 0..NI-1` - index of an item
+* `î[t] = 0..NI-1` - secret index of a non-formed item in ring `t`
+* `j = 0..NS-1` - index of a statement
+* `k = 0..NX-1` - index of a secret
+* `{s[t,i,k]}` — 3-dimensional array of s-elements of size `NR·NI·NX`.
+* `{P[t,i,j]}` — 3-dimensional array of commitments of size `NR·NI·NS`.
+* `{C}` — array of original commitments to be signed that themselves commit to `{P[t,i,j]}` (specified by the concrete protocol).
+* `{F[j]({x[k]})}` — a list of commitment functions of size `NS` over `NX` variables.
+
+Definitions:
+
+    rangeproof<name> = protocol {
+        name:  <name>,
+        group: "Ristretto"
+        xof:   "SHAKE128"
+    }
+        
+    rangeproof_sign({î[t]}, {P[t,i,j]}, {C}, {F[j]({x[k]})}, entropy, msg, label) {
+        TBD
+        
+        return (ê, {s[t,i,k]})
+    }
+    
+    rangeproof_verify(ê, {s[t,i,k]}, {P[t,i,j]}, {C}, {F[j]({x[k]})}, label, msg) {
+        for t := 0..(NR-1) {
+            e[t,0] := ê
+            for i := 0..(NI-1) {
+                for j := 0..(NS-1) {
+                    R[t,i,j] := F[j](s[t,i,0], ..., s[t,i,NX-1]) - e[t,0]·P[t,i,j]
+                }
+                e[t, i+1 mod NI] := ChallengeHash<rangeproof>(
+                                        {label},
+                                        // points are doubled to take advantage of Doppio, a batchable variant of Ristretto encoding
+                                        {2·R[t,i,0],...,2·R[t,i,NS-1]},
+                                        {C},
+                                        uint64le(t) || uint64le(i) || msg
+                                    )
+            }
+        }
+        e’ := Compress<rangeproof>(32, {label}, {}, e[0,0] || ... || e[NR-1,0])
+        return ê == e’
+    }
+
 
 
 ## ChainKD

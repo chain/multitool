@@ -6,9 +6,11 @@
 * [Schnorr](#schnorr)
 * [VRF](#vrf)
 * [Designated Verifier VRF](#designated-verifier-vrf)
-* [ChainKD](#chainkd)
 * [Ring Signature](#ring-signature)
 * [Traceable Ring Signature](#traceable-ring-signature)
+* [Abstract Range Proof](#abstract-range-proof)
+* [ChainKD](#chainkd)
+
 
 ## Orthogonal generators
 
@@ -67,7 +69,7 @@ Algorithms:
     }
 
 
-### VRF
+## VRF
 
 Simple VRF maps an arbitrary-length string `msg` to a verifiably random outut keyed with public key `P`.
 
@@ -119,7 +121,7 @@ Simple VRF maps an arbitrary-length string `msg` to a verifiably random outut ke
         }
     }
 
-### Designated Verifier VRF
+## Designated Verifier VRF
 
 This is a variant of VRF above, but with a 2-item ring signature that allows forgery by the designated verifier
 identified by the key pair `D,d` (`D == d·G`).
@@ -196,58 +198,7 @@ identified by the key pair `D,d` (`D == d·G`).
     }
 
 
-### ChainKD
-
-ChainKD is a hierarchical key derivation (HKD) scheme inspired by BIP32.
-It is not a signature scheme per-se, but reuses the existing framework for deriving keys.
-
-ChainKD extends Schnorr public and private keys to xpubs and xprvs: extended public/private keys.
-Each key is encoded with additional 32-byte string `dk` used as symmetric “derivation key”.
-
-If the public or private key is stripped of `dk`, it cannot be used to derive or identify child keys.
-
-    chainkd = protocol {
-        name:  "ChainKD"
-        group: "Ristretto"
-        xof:   "SHAKE128"
-    }
-    
-    chainkd_generate(seed) {
-        {x,dk} := ScalarHash<chainkd>(2, {"Generate"}, {seed}, {}, "")
-        return x||dk
-    }
-    
-    // Compute xpub for a given xprv.
-    chainkd_xpub(x||dk) {
-        G := chainkd.group.base
-        P := x·G
-        P’:= chainkd.group.encode(P)
-        return P’||dk
-    }
-    
-    chainkd_derive_xpub(P1’||dk1, selector) {
-        G := chainkd.group.base
-        P1 := chainkd.group.decode(P1’)
-        {f,dk2} := ScalarHash<chainkd>(2, {"Derive"}, {dk1}, {P1}, selector)
-        P2 := P1 + f·G
-        P2’:= chainkd.group.encode(P2)
-        return P2’||dk2
-    }
-    
-    chainkd_derive_xprv(x1||dk1, selector) {
-        G := chainkd.group.base
-        P1 := x1·G
-        {f,dk2} := ScalarHash<chainkd>(2, {"Derive"}, {dk1}, {P1}, selector)
-        x2 := x1 + f mod chainkd.group.order
-        return x2||dk2
-    }
-    
-    chainkd_derive_hardened(x||dk, selector) {
-        return chainkd_generate(x||dk||selector)
-    }
-
-
-### Ring Signature
+## Ring Signature
 
 The following shows a ring version of Schnorr signature, but using compressed signature form (`e,s[0],...,s[n-1]`) to align with unconditionally binding commitments in the Asset Range Proof (see below).
 
@@ -300,7 +251,7 @@ The following shows a ring version of Schnorr signature, but using compressed si
     }
 
 
-### Traceable Ring Signature
+## Traceable Ring Signature
 
 This is a part of the CryptoNote/Monero protocol that is effectively a ring version of VRF where the message under commitment is the public key itself.
 
@@ -375,5 +326,60 @@ Algorithms:
         return e == e’
     }
 
+
+## Abstract Range Proof
+
+TBD.
+
+
+## ChainKD
+
+ChainKD is a hierarchical key derivation (HKD) scheme inspired by BIP32.
+It is not a signature scheme per-se, but reuses the existing framework for deriving keys.
+
+ChainKD extends Schnorr public and private keys to xpubs and xprvs: extended public/private keys.
+Each key is encoded with additional 32-byte string `dk` used as symmetric “derivation key”.
+
+If the public or private key is stripped of `dk`, it cannot be used to derive or identify child keys.
+
+    chainkd = protocol {
+        name:  "ChainKD"
+        group: "Ristretto"
+        xof:   "SHAKE128"
+    }
+    
+    chainkd_generate(seed) {
+        {x,dk} := ScalarHash<chainkd>(2, {"Generate"}, {seed}, {}, "")
+        return x||dk
+    }
+    
+    // Compute xpub for a given xprv.
+    chainkd_xpub(x||dk) {
+        G := chainkd.group.base
+        P := x·G
+        P’:= chainkd.group.encode(P)
+        return P’||dk
+    }
+    
+    chainkd_derive_xpub(P1’||dk1, selector) {
+        G := chainkd.group.base
+        P1 := chainkd.group.decode(P1’)
+        {f,dk2} := ScalarHash<chainkd>(2, {"Derive"}, {dk1}, {P1}, selector)
+        P2 := P1 + f·G
+        P2’:= chainkd.group.encode(P2)
+        return P2’||dk2
+    }
+    
+    chainkd_derive_xprv(x1||dk1, selector) {
+        G := chainkd.group.base
+        P1 := x1·G
+        {f,dk2} := ScalarHash<chainkd>(2, {"Derive"}, {dk1}, {P1}, selector)
+        x2 := x1 + f mod chainkd.group.order
+        return x2||dk2
+    }
+    
+    chainkd_derive_hardened(x||dk, selector) {
+        return chainkd_generate(x||dk||selector)
+    }
 
 

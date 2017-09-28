@@ -334,15 +334,18 @@ Using it standalone is not possible because it defers the choice of commitments 
 to the higher-level protocols (see asset range proof, value range proof, issuance asset range proof)
 that must ensure commitments are not malleabile with respect to the proof.
 
+Warning: this algorithm is not running in constant time.
+
 * `NR` — number of rings
 * `NI` — number of items per ring
 * `NS` — number of statements per item
 * `NX` — number of secrets per item
 * `t = 0..NR-1` - index of a ring
 * `i = 0..NI-1` - index of an item
-* `î[t] = 0..NI-1` - secret index of a non-formed item in ring `t`
 * `j = 0..NS-1` - index of a statement
-* `k = 0..NX-1` - index of a secret
+* `k = 0..NX-1` - index of a secret within an item
+* `î[t] = 0..NI-1` - secret index of a non-formed item in ring `t`
+* `x[t,k]` - secret scalar for ring `t` with index `k`
 * `{s[t,i,k]}` — 3-dimensional array of s-elements of size `NR·NI·NX`.
 * `{P[t,i,j]}` — 3-dimensional array of commitments of size `NR·NI·NS`.
 * `{C}` — array of original commitments to be signed that themselves commit to `{P[t,i,j]}` (specified by the concrete protocol).
@@ -356,8 +359,69 @@ Definitions:
         xof:   "SHAKE128"
     }
         
-    rangeproof_sign({î[t]}, {P[t,i,j]}, {C}, {F[j]({x[k]})}, entropy, msg, label) {
-        TBD
+    rangeproof_sign({x[t,k]}, {î[t]}, {P[t,i,j]}, {C}, {F[j]({x[k]})}, entropy, msg, label) {
+        // Generate NR·NI·NX random scalars
+        {r[t,i,k]} := ScalarHash<trs>(NR·NI·NX, {label}, {entropy, x[0,0],...,x[NR-1,NX-1], î[0],...,î[NR-1]}, {C}, msg)
+        
+        // Precommit
+        for t := 0..(NR-1) {
+            i := î[t]
+            for j := 0..(NS-1) {
+                R[t,i,j] := F[j](r[t,i,0], ..., r[t,i,NX-1])
+            }
+            e[t, i+1 mod NI] := ChallengeHash<rangeproof>(
+                                    {label},
+                                    // points are doubled to take advantage of Doppio, a batchable variant of Ristretto encoding
+                                    {2·R[t,i,0],...,2·R[t,i,NS-1]},
+                                    {C}, uint64le(t) || uint64le(i) || msg
+                                )
+        }
+        
+        // First halves of the rings
+        for t := 0..(NR-1) {
+            for i := î[t]+1..(NI-1) { // Note: can be an empty loop if î[t] == NI-1
+                for k := 0..(NX-1) {
+                    s[t,i,k] = r[t,i,k] // forged
+                }
+                for j := 0..(NS-1) {
+                    R[t,i,j] := F[j](s[t,i,0], ..., s[t,i,NX-1]) - e[t,i]·P[t,i,j]
+                }
+                e[t, i+1 mod NI] := ChallengeHash<rangeproof>(
+                                        {label},
+                                        {2·R[t,i,0],...,2·R[t,i,NS-1]},
+                                        {C}, uint64le(t) || uint64le(i) || msg
+                                    )
+            }
+        }
+        
+        // Shared challenge at index 0
+        ê := Compress<rangeproof>(32, {label}, {}, e[0,0] || ... || e[NR-1,0])
+        
+        // Complete second halves of the rings
+        for t := 0..(NR-1) {
+            e[t,0] := ê
+            for i := 0..î[t]-1 { // Note: can be an empty loop if î[t] == 0
+                for k := 0..(NX-1) {
+                    s[t,i,k] = r[t,i,k] // forged
+                }
+                for j := 0..(NS-1) {
+                    R[t,i,j] := F[j](s[t,i,0], ..., s[t,i,NX-1]) - e[t,i]·P[t,i,j]
+                }
+                e[t, i+1 mod NI] := ChallengeHash<rangeproof>(
+                                        {label},
+                                        {2·R[t,i,0],...,2·R[t,i,NS-1]},
+                                        {C}, uint64le(t) || uint64le(i) || msg
+                                    )
+            }
+        }
+        
+        // Sign
+        for t := 0..(NR-1) {
+            i := î[t]
+            for k := 0..(NX-1) {
+                s[t,i,k] = r[t,i,k] + x[t,k]·e[t,i] mod rangeproof.group.order
+            }
+        }
         
         return (ê, {s[t,i,k]})
     }

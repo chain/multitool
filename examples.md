@@ -9,6 +9,7 @@
 * [Ring Signature](#ring-signature)
 * [Traceable Ring Signature](#traceable-ring-signature)
 * [Abstract Range Proof](#abstract-range-proof)
+* [Set Range Proof](#set-range-proof)
 * [ChainKD](#chainkd)
 
 
@@ -200,7 +201,7 @@ identified by the key pair `D,d` (`D == d·G`).
 
 ## Ring Signature
 
-The following shows a ring version of Schnorr signature, but using compressed signature form (`e,s[0],...,s[n-1]`) to align with unconditionally binding commitments in the Asset Range Proof (see below).
+The following shows a ring version of Schnorr signature, but using compressed signature form (`e,s[0],...,s[n-1]`) to align with unconditionally binding commitments in the [Set Range Proof](#set-range-proof).
 
     rs = protocol {
         name:  "RingSignature"
@@ -329,12 +330,12 @@ Definitions:
 
 ## Abstract Range Proof
 
-This is an abstract template for various rangeproofs.
-Using it standalone is not possible because it defers the choice of commitments to be signed
-to the higher-level protocols (see asset range proof, value range proof, issuance asset range proof)
-that must ensure commitments are not malleabile with respect to the proof.
+This is an abstract template for various rangeproofs. Using it standalone
+is not possible because it defers the choice of commitments to be signed (`{C}`)
+to the higher-level protocols (e.g. a [set range proof](#set-range-proof)) that must ensure
+that none of the commitments are malleable with respect to the proof.
 
-Warning: this algorithm is not running in constant time.
+**Warning: this algorithm is not running in constant time.**
 
 * `NR` — number of rings
 * `NI` — number of items per ring
@@ -353,15 +354,19 @@ Warning: this algorithm is not running in constant time.
 
 Definitions:
 
-    rangeproof<name> = protocol {
-        name:  <name>,
+    rangeproof = protocol {
+        name:  ___,
+        NR:    ___,
+        NI:    ___,
+        NS:    ___,
+        NX:    ___,
         group: "Ristretto"
         xof:   "SHAKE128"
     }
         
-    rangeproof_sign({x[t,k]}, {î[t]}, {P[t,i,j]}, {C}, {F[j]({x[k]})}, entropy, msg, label) {
+    rangeproof_sign<protocol>({x[t,k]}, {î[t]}, {P[t,i,j]}, {C}, {F[j]({x[k]})}, entropy, msg, label) {
         // Generate NR·NI·NX random scalars
-        {r[t,i,k]} := ScalarHash<trs>(NR·NI·NX, {label}, {entropy, x[0,0],...,x[NR-1,NX-1], î[0],...,î[NR-1]}, {C}, msg)
+        {r[t,i,k]} := ScalarHash<protocol>(NR·NI·NX, {label}, {entropy, x[0,0],...,x[NR-1,NX-1], î[0],...,î[NR-1]}, {C}, msg)
         
         // Precommit
         for t := 0..(NR-1) {
@@ -369,7 +374,7 @@ Definitions:
             for j := 0..(NS-1) {
                 R[t,i,j] := F[j](r[t,i,0], ..., r[t,i,NX-1])
             }
-            e[t, i+1 mod NI] := ChallengeHash<rangeproof>(
+            e[t, i+1 mod NI] := ChallengeHash<protocol>(
                                     {label},
                                     // points are doubled to take advantage of Doppio, a batchable variant of Ristretto encoding
                                     {2·R[t,i,0],...,2·R[t,i,NS-1]},
@@ -386,7 +391,7 @@ Definitions:
                 for j := 0..(NS-1) {
                     R[t,i,j] := F[j](s[t,i,0], ..., s[t,i,NX-1]) - e[t,i]·P[t,i,j]
                 }
-                e[t, i+1 mod NI] := ChallengeHash<rangeproof>(
+                e[t, i+1 mod NI] := ChallengeHash<protocol>(
                                         {label},
                                         {2·R[t,i,0],...,2·R[t,i,NS-1]},
                                         {C}, uint64le(t) || uint64le(i) || msg
@@ -394,8 +399,8 @@ Definitions:
             }
         }
         
-        // Shared challenge at index 0
-        ê := Compress<rangeproof>(32, {label}, {}, e[0,0] || ... || e[NR-1,0])
+        // Shared challenge at statement 0
+        ê := Compress<protocol>(32, {label}, {}, e[0,0] || ... || e[NR-1,0])
         
         // Complete second halves of the rings
         for t := 0..(NR-1) {
@@ -407,7 +412,7 @@ Definitions:
                 for j := 0..(NS-1) {
                     R[t,i,j] := F[j](s[t,i,0], ..., s[t,i,NX-1]) - e[t,i]·P[t,i,j]
                 }
-                e[t, i+1 mod NI] := ChallengeHash<rangeproof>(
+                e[t, i+1 mod NI] := ChallengeHash<protocol>(
                                         {label},
                                         {2·R[t,i,0],...,2·R[t,i,NS-1]},
                                         {C}, uint64le(t) || uint64le(i) || msg
@@ -426,14 +431,14 @@ Definitions:
         return (ê, {s[t,i,k]})
     }
     
-    rangeproof_verify(ê, {s[t,i,k]}, {P[t,i,j]}, {C}, {F[j]({x[k]})}, label, msg) {
+    rangeproof_verify<protocol>(ê, {s[t,i,k]}, {P[t,i,j]}, {C}, {F[j]({x[k]})}, label, msg) {
         for t := 0..(NR-1) {
             e[t,0] := ê
             for i := 0..(NI-1) {
                 for j := 0..(NS-1) {
                     R[t,i,j] := F[j](s[t,i,0], ..., s[t,i,NX-1]) - e[t,0]·P[t,i,j]
                 }
-                e[t, i+1 mod NI] := ChallengeHash<rangeproof>(
+                e[t, i+1 mod NI] := ChallengeHash<protocol>(
                                         {label},
                                         // points are doubled to take advantage of Doppio, a batchable variant of Ristretto encoding
                                         {2·R[t,i,0],...,2·R[t,i,NS-1]},
@@ -442,10 +447,83 @@ Definitions:
                                     )
             }
         }
-        e’ := Compress<rangeproof>(32, {label}, {}, e[0,0] || ... || e[NR-1,0])
+        e’ := Compress<protocol>(32, {label}, {}, e[0,0] || ... || e[NR-1,0])
         return ê == e’
     }
 
+
+## Set Range Proof
+
+Set range proof proves that a given ElGamal commitment belongs to a range of other ElGamal commitments.
+
+* `G,J` — orthogonal generators, first one is a standard base point.
+* `M` — group element for which commitment is created
+* `c’` — a blinding scalar.
+* `(H’,B’) = (M+c’·G, c’·J)` — non-trusted commitment to be proven to belong to the required range
+* `N` — number of items in the range
+* `i=0..N-1` — index of the item in the range
+* `î` — secret index of the commitment in the range, which is re-blinded as `H’,B’`.
+* `(H[i],B[i])` — the required range of `N` trusted commitments.
+
+Definitions:
+
+    srp = rangeproof {
+        name: "SetRangeProof",
+        NR:   1, // rings
+        NI:   N, // items
+        NS:   2, // statements
+        NX:   1  // secrets
+    }
+    
+    srp_sign(M, î, c’, c[î], {H[i],B[i]}, entropy, msg, label) {
+        G := srp.group.base
+        J := Generator<srp>("J")
+        
+        // Blind
+        H’:= M + c’·G
+        B’:= c’·J
+        
+        // Prepare rangeproof configuration
+        x := c’ - c[î]
+        for i := 0..(N-1) {
+            P[0,i,0] := H’ - H[i]
+            P[0,i,1] := B’ - B[i]
+        }
+        F[0](x) := x·G
+        F[1](x) := x·J
+        
+        // Sign
+        return rangeproof_sign<protocol>(
+                    {x}, {î}, 
+                    {P[t,i,j]}, 
+                    {H’,B’,H[0],B[0], ... H[N-1],B[N-1]}, 
+                    {F[j](x)}, 
+                    entropy, msg, label
+                )
+    }
+    
+    srp_verify(ê, {s[t,i,k]}, (H’,B’), {H[i],B[i]}, label, msg) {
+        G := srp.group.base
+        J := Generator<srp>("J")
+        
+        // Prepare rangeproof configuration
+        for i := 0..(N-1) {
+            P[0,i,0] := H’ - H[i]
+            P[0,i,1] := B’ - B[i]
+        }
+        F[0](x) := x·G
+        F[1](x) := x·J
+        
+        // Verify
+        return rangeproof_verify<srp>(
+                    ê, {s[t,i,k]},
+                    {P[t,i,j]},
+                    {H’,B’,H[0],B[0], ... H[N-1],B[N-1]},
+                    {F[j](x)},
+                    label, msg
+                )
+    }
+    
 
 
 ## ChainKD

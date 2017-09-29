@@ -328,10 +328,10 @@ Definition:
     }
 
 
-## Abstract Range Proof
+## Abstract Borromean Ring Signature
 
-This is an abstract template for various rangeproofs. Using it standalone
-is not possible because it defers the choice of commitments to be signed (`{C}`)
+This is an abstract template intended for various rangeproofs. Using it standalone
+is not possible because it defers the choice of the commitments being signed (`{C}`)
 to the higher-level protocols (e.g. a [set range proof](#set-range-proof)) that must ensure
 that none of the commitments are malleable with respect to the proof.
 
@@ -354,7 +354,7 @@ that none of the commitments are malleable with respect to the proof.
 
 Definition:
 
-    AbstractRangeProof = protocol {
+    AbstractBRS = protocol {
         name:  ___,
         NR:    ___,
         NI:    ___,
@@ -398,8 +398,14 @@ Definition:
                 }
             }
         
-            // Shared challenge at statement 0
-            ê := Compress<protocol>(32, {label}, {}, e[0,0] || ... || e[NR-1,0])
+            // Shared challenge for all trailing items in each ring
+            if NR == 1 {
+                // special case for 1 ring to avoid unnecessary double-hashing
+                ê := e[0,0]
+            } else {
+                ê := Compress<protocol>(32, {label}, {}, e[0,0] || ... || e[NR-1,0])
+            }
+            
         
             // Complete second halves of the rings
             for t := 0..(NR-1) {
@@ -446,7 +452,12 @@ Definition:
                                         )
                 }
             }
-            e’ := Compress<protocol>(32, {label}, {}, e[0,0] || ... || e[NR-1,0])
+            if NR == 1 {
+                // special case for 1 ring to avoid unnecessary double-hashing
+                e’ := e[0,0]
+            } else {
+                e’ := Compress<protocol>(32, {label}, {}, e[0,0] || ... || e[NR-1,0])
+            }
             return ê == e’
         }
     }
@@ -495,7 +506,7 @@ Definition:
             F[1](x) := x·J
         
             // Sign
-            return AbstractRangeProof.sign<.>(
+            return AbstractBRS.sign<.>(
                         {x}, {î}, 
                         {P[t,i,j]}, 
                         {H’,B’,H[0],B[0], ... H[N-1],B[N-1]}, 
@@ -517,7 +528,7 @@ Definition:
             F[1](x) := x·J
         
             // Verify
-            return AbstractRangeProof.verify<.>(
+            return AbstractBRS.verify<.>(
                         ê, {s[t,i,k]},
                         {P[t,i,j]},
                         {H’,B’,H[0],B[0], ... H[N-1],B[N-1]},

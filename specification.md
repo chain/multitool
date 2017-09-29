@@ -210,8 +210,8 @@ Rationale:
 3. Each secret is padded to the nearest block to turn XOF into a PRF keyed with the secret. When the first secret is an output from RNG, it randomizes the XOF against cross-protocol misuse. If the second secret is a static signing key, it provides a defense against faulty RNG by making the resulting nonce unpredictable.
 4. Secrets are not length-prefixed as it’s expected they are independent and padding is enough to isolate permutations of each secret. TBD: review this closely to check if it's actually safe.
 5. Commitments are all group elements to which the scalar must commit. For instance, public keys, Pedersen or ElGamal commitments and alike. Since the size of these is static for a given group, length prefixes are not used.
-5. TBD: extra 16 bytes make bias less than 2^-128.
-6. TBD: XOF is used to avoid repeated hashing of the inputs and also avoid pre-hashing them which is not good for collision-resilience.
+5. Output consists of extra 128 bits per scalar to make deviation from the uniform distribution of the resulting scalar after modular reduction negligible.
+6. XOF is used instead of a fixed-output hash function for two reasons: to make one hash function work with groups of different order, and to avoid repeated hashing of the inputs which should not be pre-hashed due to collision-resilience requirement.
 
 
 ### Challenge Hash

@@ -99,6 +99,12 @@ Term      | Description
 `e`       | Challenge scalar, a Fiat-Shamir transform for the sigma-protocol.
 `s`       | Proof scalar, proving the statement about some secret `x`. Each secret has its own “s-value” (simpler schemes use only one secret).
 `entropy` | An arbitrary-length string representing randomness from a RNG. At least 128 bits of entropy are recommended.
+`{x#n}`   | A list of `n` elements: `{x[0],...,x[n-1]}`.
+`{x#n,m}` | A list of `n` lists of `m` elements.
+`{x}`     | A list of unspecified size (could be anything).
+`len(x)`  | Number of items in the list `x` (if it's a byte string, number of bytes).
+`byte(x)` | Encoding of a integer `x` in range 0..255 as a single byte.
+`uint64le(x)` | Encoding of a non-negative integer `x` using little-endian notation as an 8-byte string.
 
 ### Labelset
 
@@ -110,7 +116,7 @@ and identifiers for the hash instance.
 
 Labelset is encoded as follows:
 
-    n || len1 || label1 || ... || len_n || label_n
+    n || len(label1) || label1 || ... || len(label_n) || label_n
 
 Where `n` is a 1-byte encoding of the number of labels, and `len_i` is a 1-byte encoding of the length of the label that follows, in bytes.
 Number of labels and the length of each label in bytes is limited to 255.
@@ -174,15 +180,13 @@ Commitment strings could be the public keys, various commitments.
 * `labelset` is a list of labels that allow customization and domain-separation in the higher-level protocol.
 * `n` is the number of scalars to be produced, encoded as a little-endian 64-bit unsigned integer.
 * `pad` are distinct minimal all-zero strings (could be empty) that pad the input to the block size of the given XOF.
-* `x` is a list of `k` secret values (e.g. private key, secret indices).
+* `x` is a list of `k` secret arbitrary-length strings (e.g. private key, secret indices).
 * `C` is a list of `m` commitment group elements (e.g. public keys).
 
 Algorithm:
 
-    ScalarHash<protocol>(n, labelset, {x[i]}, {C[j]}, msg) {
+    ScalarHash<protocol>(n, labelset, {x#k}, {C#m}, msg) {
         labelset’ := AddLabels(protocol.labelset, 'ScalarHash', labelset...)
-        k = len(x)
-        m = len(C)
         {r[0],...,r[n-1]} := protocol.xof(
                                         labelset’   || 
                                         uint64le(n) || <pad> ||
@@ -218,10 +222,8 @@ Rationale:
 
 Challenge hash produces a single scalar `e` out of random commitments to nonces (`{R[i]}`) bound to the commitments (group elements) and the message (arbitrary-length string).
 
-    ChallengeHash<protocol>(labelset, {R[i]}, {C[i]}, msg) {
+    ChallengeHash<protocol>(labelset, {R#n}, {C#m}, msg) {
         labelset’ := AddLabels(protocol.labelset, 'ChallengeHash', labelset...)
-        n = len(R)
-        m = len(C)
         e := protocol.xof(
                         labelset’   || <pad> ||
                         uint64le(n) ||
@@ -247,6 +249,44 @@ Rationale:
 2. TBD: nonce commitments are padded to a whole block to turn XOF into a PRF which is hard to find collisions with.
 3. TBD: repeated labelset adds collision resilience
 4. TBD: extra 16 bytes of XOF output to make bias less than 2^-128 after reducing the scalar mod l.
+
+### Statement Set
+
+A common part of every Sigma-protocol is committing, signing and proving a set of statements about a set of secret scalars.
+The `StatementSet` primitive allows to define such set of statements once and reuse them between commit/sign/prove operations.
+See [examples](examples.md) of how it could be used.
+
+* `n` — number of statements represented with commitment functions.
+* `m` — number of scalars, knowledge of which is being proven.
+* `F({x#m})` is a function that takes `m` scalar arguments and returns a single group element.
+* `{P#n}` — `n` group elements representing a commitment to the secrets. Not always the result of evaluation of `F` functions (e.g. range proofs modify that commitment).
+* `{C}` — an arbitrary number of original commitments to be signed that themselves commit to `{P#n}` (these are specified by the concrete protocol).
+* `msg` — a message string being signed.
+
+Definition:
+
+    StatementSet<protocol>({F({x#m})#n}) {
+        commit({r#m}) {
+            for j := 0..(n-1) {
+                R[j] := F[j]({r#m})
+            }
+            return {R[j]}
+        }
+        prove(e, {r#m}, {x#m}) {
+            for k := 0..(m-1) {
+                s[k] = r[k] + e·x[k] mod protocol.group.order
+            }
+            return {s#m}
+        }
+        recommit(e, {s#m},{P#n}) {
+            for j := 0..n {
+                R[j] := F[j]({s#m}) - e·P[j]
+            }
+            return {R#n}
+        }
+    }
+
+
 
 ### Point Hash
 

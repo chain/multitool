@@ -40,31 +40,32 @@ Definition:
         name:  "Schnorr"
         group: "Ristretto"
         xof:   "SHAKE128"
-    
-        genkey(entropy, customization_label) {
+        
+        statement {
             G := group.base
-            {x} := ScalarHash<.>(1, {customization_label}, {entropy}, {}, "")
-            P := x·G
-            P’:= group.encode(P’)
-            return (P’, x)
+            S := StatementSet<.>({
+                F(x) = x·G
+            })
+            return S
+        }
+        
+        genkey(entropy, customlabel) {
+            x := ScalarHash<.>(1, {customlabel}, {entropy}, {}, "")
+            P := statement.commit(x)
+            return (P, x)
         }
     
-        sign(P, x, entropy, msg, customization_label) {
-            G := group.base
-            {r} := ScalarHash<.>(1, {customization_label}, {entropy,x}, {P}, msg)
-            R := r·G
-            e := ChallengeHash<.>({customization_label}, {R}, {P}, msg)
-            s := r + e·x mod group.order
-            R’:= group.encode(R)
-            return R’ || s
+        sign(x, entropy, P, msg, customlabel) {
+            r := ScalarHash<.>(1, {customlabel}, {entropy,x}, {P}, msg)
+            R := statement.commit(r)
+            e := ChallengeHash<.>({customlabel}, {R}, {P}, msg)
+            s := statement.prove(e, {r}, {x})
+            return (R,s)
         }
     
-        verify(R’||s, P’, msg, customization_label) {
-            G := group.base
-            R1:= group.decode(R’)
-            P := group.decode(P’)
-            e := ChallengeHash<.>({customization_label}, {R1}, {P}, msg)
-            R2:= s·G - e·P
+        verify((R1,s), P, msg, customlabel) {
+            e := ChallengeHash<.>({customlabel}, {R1}, {P}, msg)
+            R2:= statement.recommit(e, {s}, {P})
             return group.equal(R1, R2)
         }
     }
@@ -79,42 +80,39 @@ Simple VRF maps an arbitrary-length string `msg` to a verifiably random outut ke
         group: "Ristretto"
         xof:   "SHAKE128"
     
-        genkey(entropy, customization_label) {
-            Schnorr.genkey(entropy, customization_label)
+        statement(customlabel, P, msg) {
+            G := group.base
+            B := PointHash<.>({customlabel}, {P}, msg)
+            S := StatementSet<.>({
+                F0(x) = x·G,
+                F1(x) = x·B
+            })
+            return S
         }
-    
-        commit(P’, x, customization_label, msg) {
-            P := group.decode(P’)
-            B := PointHash<.>({customization_label}, {P}, msg)
-            V := x·B
-            h := Compress<.>(32, {customization_label}, {V}, "")
+        
+        commit(x, customlabel, P, msg) {
+            S   := statement(customlabel, P, msg)
+            _,V := S.commit(x)
+            h   := Compress<.>(32, customlabel, {V}, "")
             return h
         }
     
-        sign(P’, x, entropy, customization_label, msg) {
-            G := group.base
-            P := group.decode(P’)
-            B := PointHash<.>({customization_label}, {P}, msg)
-            V := x·B
-            {r} := ScalarHash<.>(1, {customization_label}, {entropy,x}, {P, V}, msg)
-            RG:= r·G
-            RB:= r·B
-            e := ChallengeHash<.>({customization_label}, {RG, RB}, {P, V}, msg)
-            s := r + e·x mod group.order
-            V’:= group.encode(V)
-            return (V’||e||s)
+        sign(x, P, entropy, customlabel, msg) {
+            S     := statement(customlabel, P, msg)
+            P, V  := S.commit(x)
+            r     := ScalarHash<.>(1, {customlabel}, {entropy,x}, {P, V}, msg)
+            RG,RB := S.commit(r)
+            e     := ChallengeHash<.>({customlabel}, {RG, RB}, {P, V}, msg)
+            s     := S.prove(e, {r}, {x})
+            return (V,e,s)
         }
     
-        verify((V’||e||s), P’, msg, customization_label) {
-            G := group.base
-            P := group.decode(P’)
-            B := PointHash<.>({customization_label}, {P}, msg)
-            V := group.decode(V’)
-            RG:= s·G - e·P
-            RB:= s·B - e·V
-            e’:= ChallengeHash<.>({customization_label}, {RG, RB}, {P, V}, msg)
+        verify((V,e,s), P, customlabel, msg) {
+            S     := statement(customlabel, P, msg)
+            RG,RB := S.recommit(e, {s}, {P,V})
+            e’    := ChallengeHash<.>({customlabel}, {RG, RB}, {P, V}, msg)
             if e’ == e {
-                h := Compress<.>(32, {customization_label}, {V}, "")
+                h := Compress<.>(32, {customlabel}, {V}, "")
                 return h
             } else {
                 return nil
@@ -132,65 +130,59 @@ identified by the key pair `D,d` (`D == d·G`).
         group: "Ristretto"
         xof:   "SHAKE128"
         
-        // used by verifiers and signers
-        genkey(entropy, customization_label) {
-            Schnorr.genkey(entropy, customization_label)
+        proof_statement(customlabel, P, msg) {
+            G := group.base
+            B := PointHash<.>({customlabel}, {P}, msg)
+            S := StatementSet<.>({
+                F0(x) = x·G,
+                F1(x) = x·B
+            })
+            return S
         }
-                
-        commit(P’, x, customization_label, msg) {
-            P := group.decode(P’)
-            B := PointHash<.>({customization_label}, {P}, msg)
-            V := x·B
-            h := Compress<.>(32, {customization_label}, {V}, "")
+        
+        forgery_statement() {
+            G := group.base
+            S := StatementSet<.>({F(x) = x·G})
+            return S
+        }
+        
+        commit(x, customlabel, P, msg) {
+            SP  := proof_statement(customlabel, P, msg)
+            _,V := SP.commit(x)
+            h   := Compress<.>(32, customlabel, {V}, "")
             return h
         }
     
-        sign(D’, P’, x, entropy, customization_label, msg) {
-            G := group.base
-            D := group.decode(D’)
-            P := group.decode(P’)
-            B := PointHash<.>({customization_label}, {P}, msg)
-            V := x·B
-            {r,z} := ScalarHash<.>(2, {customization_label}, {entropy,x}, {D, P, V}, msg)
-            RG:= r·G
-            RB:= r·B
-            e1:= ChallengeHash<.>({"Proof", customization_label}, {RG, RB}, {D, P, V}, msg)
-            RF:= z·G + e1·D
-            e0:= ChallengeHash<.>({"Forgery", customization_label}, {RF}, {D, P, V}, msg)
-            s := r + e0·x mod group.order
-            V’:= group.encode(V)
-            return (V’||e0||s||z)
+        sign(D, P, x, entropy, customlabel, msg) {
+            SP    := proof_statement(customlabel, P, msg)
+            SF    := forgery_statement()
+            P, V  := SP.commit(x)
+            {r,z} := ScalarHash<.>(2, {customlabel}, {entropy,x}, {D, P, V}, msg)
+            RG,RB := SP.commit(r)
+            e1    := ChallengeHash<.>({"Proof", customlabel}, {RG, RB}, {D, P, V}, msg)
+            RF    := SF.recommit(e1, {z}, {D})
+            e0    := ChallengeHash<.>({"Forgery", customlabel}, {RF}, {D, P, V}, msg)
+            s     := SP.prove(e0, {r}, {x})
+            return (V,e0,s,z)
         }
     
-        forge(D’, P’, V’, d, entropy, customization_label, msg) {
-            G := group.base
-            D := group.decode(D’)
-            P := group.decode(P’)
-            B := PointHash<.>({customization_label}, {P}, msg)
-            V := group.decode(V’)
-            {r,s} := ScalarHash<.>(2, {customization_label}, {entropy,d}, {D, P, V}, msg)
-            RF:= r·G
-            e0:= ChallengeHash<.>({"Forgery", customization_label}, {RF}, {D, P, V}, msg)
-            RG:= s·G - e0·P
-            RB:= s·B - e0·V
-            e1:= ChallengeHash<.>({"Proof", customization_label}, {RG, RB}, {D, P, V}, msg)
-            z := r + e1·x mod group.order
-            return (V’||e0||s||z)
+        forge(D, P, V, d, entropy, customlabel, msg) {
+            {r,s} := ScalarHash<.>(2, {customlabel}, {entropy,d}, {D, P, V}, msg)
+            RF    := SF.commit(r)
+            e0    := ChallengeHash<.>({"Forgery", customlabel}, {RF}, {D, P, V}, msg)
+            RG,RB := SP.recommit(e0, {s}, {P,V})
+            e1    := ChallengeHash<.>({"Proof", customlabel}, {RG, RB}, {D, P, V}, msg)
+            z     := SF.prove(e1, {r}, {d})
+            return (V,e0,s,z)
         }
     
-        verify((V’||e0||s||z), D’, P’, msg, customization_label) {
-            G := group.base
-            D := group.decode(D’)
-            P := group.decode(P’)
-            B := PointHash<.>({customization_label}, {P}, msg)
-            V := group.decode(V’)
-            RG:= s·G - e0·P
-            RB:= s·B - e0·V
-            e1:= ChallengeHash<.>({"Proof", customization_label}, {RG, RB}, {D, P, V}, msg)
-            RF:= z·G + e1·D
-            e’:= ChallengeHash<.>({"Forgery", customization_label}, {RF}, {D, P, V}, msg)
+        verify((V,e0,s,z), D, P, msg, customlabel) {
+            RG,RB := SP.recommit(e0, {s}, {P,V})
+            e1    := ChallengeHash<.>({"Proof", customlabel}, {RG, RB}, {D, P, V}, msg)
+            RF    := SF.recommit(e1, {z}, {D})
+            e’    := ChallengeHash<.>({"Forgery", customlabel}, {RF}, {D, P, V}, msg)
             if e’ == e0 {
-                h := Compress<.>(32, {customization_label}, {V}, "")
+                h := Compress<.>(32, {customlabel}, {V}, "")
                 return h
             } else {
                 return nil
@@ -429,7 +421,7 @@ Definition:
             for t := 0..(NR-1) {
                 i := î[t]
                 for k := 0..(NX-1) {
-                    s[t,i,k] = r[t,i,k] + x[t,k]·e[t,i] mod rangeproof.group.order
+                    s[t,i,k] = r[t,i,k] + x[t,k]·e[t,i] mod group.order
                 }
             }
         

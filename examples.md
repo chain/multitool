@@ -36,37 +36,32 @@ Plain Schnorr uncompressed signature protocol (similar to EdDSA).
 
 Definition:
 
-    Schnorr = protocol {
-        name:  "Schnorr"
-        group: "Ristretto"
-        xof:   "SHAKE128"
+    protocol Schnorr(customlabel) {
+        name        := "Schnorr"
+        group       := "Ristretto"
+        xof         := "SHAKE128"
+        extralabels := {customlabel}
+        G           := group.base
+        F(x)        := x·G
         
-        statement {
-            G := group.base
-            S := StatementSet<.>({
-                F(x) = x·G
-            })
-            return S
-        }
-        
-        genkey(entropy, customlabel) {
-            x := ScalarHash<.>(1, {customlabel}, {entropy}, {}, "")
-            P := statement.commit(x)
+        genkey(entropy) {
+            x := ScalarHash("", {entropy}, {}, "")
+            P := Commit(x, {F})
             return (P, x)
         }
     
-        sign(x, entropy, P, msg, customlabel) {
-            r := ScalarHash<.>(1, {customlabel}, {entropy,x}, {P}, msg)
-            R := statement.commit(r)
-            e := ChallengeHash<.>({customlabel}, {R}, {P}, msg)
-            s := statement.prove(e, {r}, {x})
+        sign(x, entropy, P, msg) {
+            r := ScalarHash("", {entropy,x}, {P}, msg)
+            R := Commit(r, {F})
+            e := ChallengeHash("", {R}, {P}, msg)
+            s := Prove(e, {r}, {x})
             return (R,s)
         }
     
-        verify((R1,s), P, msg, customlabel) {
-            e := ChallengeHash<.>({customlabel}, {R1}, {P}, msg)
-            R2:= statement.recommit(e, {s}, {P})
-            return group.equal(R1, R2)
+        verify(R, s, P, msg) {
+            e := ChallengeHash("", {R}, {P}, msg)
+            R’:= Recommit(e, {s}, {P}, {F})
+            return group.equal(R, R’)
         }
     }
 
@@ -75,44 +70,37 @@ Definition:
 
 Simple VRF maps an arbitrary-length string `msg` to a verifiably random outut keyed with public key `P`.
 
-    VRF = protocol {
-        name:  "VRF"
-        group: "Ristretto"
-        xof:   "SHAKE128"
-    
-        statement(customlabel, P, msg) {
-            G := group.base
-            B := PointHash<.>({customlabel}, {P}, msg)
-            S := StatementSet<.>({
-                F0(x) = x·G,
-                F1(x) = x·B
-            })
-            return S
-        }
+    protocol VRF(customlabel) {
+        name        := "VRF"
+        group       := "Ristretto"
+        xof         := "SHAKE128"
+        extralabels := {customlabel}
         
-        commit(x, customlabel, P, msg) {
-            S   := statement(customlabel, P, msg)
-            _,V := S.commit(x)
-            h   := Compress<.>(32, customlabel, {V}, "")
+        G           := group.base
+        B(P,msg)    := PointHash("", {P}, msg)
+        F0(x)       := x·G
+        F1(P,msg,x) := x·B(P,msg)
+        
+        commit(x, P, msg) {
+            V   := Commit(x, {F1(P,msg)})
+            h   := Compress(32, "", {V}, "")
             return h
         }
     
-        sign(x, P, entropy, customlabel, msg) {
-            S     := statement(customlabel, P, msg)
-            P, V  := S.commit(x)
-            r     := ScalarHash<.>(1, {customlabel}, {entropy,x}, {P, V}, msg)
-            RG,RB := S.commit(r)
-            e     := ChallengeHash<.>({customlabel}, {RG, RB}, {P, V}, msg)
-            s     := S.prove(e, {r}, {x})
+        sign(x, P, entropy, msg) {
+            P, V  := Commit(x, {F0, F1(P,msg)})
+            r     := ScalarHash("", {entropy,x}, {P, V}, msg)
+            RG,RB := Commit(r, {F0, F1(P,msg)})
+            e     := ChallengeHash("", {RG, RB}, {P, V}, msg)
+            s     := Prove(e, {r}, {x})
             return (V,e,s)
         }
     
         verify((V,e,s), P, customlabel, msg) {
-            S     := statement(customlabel, P, msg)
-            RG,RB := S.recommit(e, {s}, {P,V})
-            e’    := ChallengeHash<.>({customlabel}, {RG, RB}, {P, V}, msg)
+            RG,RB := Recommit(e, {s}, {P,V}, {F0, F1(P,msg)})
+            e’    := ChallengeHash("", {RG, RB}, {P, V}, msg)
             if e’ == e {
-                h := Compress<.>(32, {customlabel}, {V}, "")
+                h := Compress(32, "", {V}, "")
                 return h
             } else {
                 return nil
@@ -125,64 +113,51 @@ Simple VRF maps an arbitrary-length string `msg` to a verifiably random outut ke
 This is a variant of VRF above, but with a 2-item ring signature that allows forgery by the designated verifier
 identified by the key pair `D,d` (`D == d·G`).
 
-    DVRF = protocol {
-        name:  "DVRF"
-        group: "Ristretto"
-        xof:   "SHAKE128"
+    protocol DVRF(customlabel) {
+        name        := "DVRF"
+        group       := "Ristretto"
+        xof         := "SHAKE128"
+        extralabels := {customlabel}
         
-        proof_statement(customlabel, P, msg) {
-            G := group.base
-            B := PointHash<.>({customlabel}, {P}, msg)
-            S := StatementSet<.>({
-                F0(x) = x·G,
-                F1(x) = x·B
-            })
-            return S
-        }
-        
-        forgery_statement() {
-            G := group.base
-            S := StatementSet<.>({F(x) = x·G})
-            return S
-        }
+        G           := group.base
+        B(P,msg)    := PointHash("", {P}, msg)
+        F0(x)       := x·G
+        F1(P,msg,x) := x·B(P,msg)
         
         commit(x, customlabel, P, msg) {
-            SP  := proof_statement(customlabel, P, msg)
-            _,V := SP.commit(x)
-            h   := Compress<.>(32, customlabel, {V}, "")
+            V := Commit(x, F1(P,msg))
+            h := Compress(32, "", {V}, "")
             return h
         }
     
         sign(D, P, x, entropy, customlabel, msg) {
-            SP    := proof_statement(customlabel, P, msg)
-            SF    := forgery_statement()
-            P, V  := SP.commit(x)
-            {r,z} := ScalarHash<.>(2, {customlabel}, {entropy,x}, {D, P, V}, msg)
-            RG,RB := SP.commit(r)
-            e1    := ChallengeHash<.>({"Proof", customlabel}, {RG, RB}, {D, P, V}, msg)
-            RF    := SF.recommit(e1, {z}, {D})
-            e0    := ChallengeHash<.>({"Forgery", customlabel}, {RF}, {D, P, V}, msg)
-            s     := SP.prove(e0, {r}, {x})
+            P, V  := Commit(x, {F0, F1(P,msg)})
+            {r,z} := ScalarHash("", {entropy,x}, {D, P, V}, msg)
+            RG,RB := Commit(r, {F0, F1(P,msg)})
+            e1    := ChallengeHash("prove", {RG, RB}, {D, P, V}, msg)
+            RF    := Recommit(e1, {z}, {D}, {F0})
+            e0    := ChallengeHash("forge", {RF}, {D, P, V}, msg)
+            s     := Prove(e0, {r}, {x})
             return (V,e0,s,z)
         }
     
-        forge(D, P, V, d, entropy, customlabel, msg) {
-            {r,s} := ScalarHash<.>(2, {customlabel}, {entropy,d}, {D, P, V}, msg)
-            RF    := SF.commit(r)
-            e0    := ChallengeHash<.>({"Forgery", customlabel}, {RF}, {D, P, V}, msg)
-            RG,RB := SP.recommit(e0, {s}, {P,V})
-            e1    := ChallengeHash<.>({"Proof", customlabel}, {RG, RB}, {D, P, V}, msg)
-            z     := SF.prove(e1, {r}, {d})
+        forge(D, P, V, d, entropy, msg) {
+            {r,s} := ScalarHash("", {entropy,d}, {D, P, V}, msg)
+            RF    := Commit(r, {F0})
+            e0    := ChallengeHash("forge", {RF}, {D, P, V}, msg)
+            RG,RB := Recommit(e0, {s}, {P,V}, {F0, F1(P,msg)})
+            e1    := ChallengeHash("prove", {RG, RB}, {D, P, V}, msg)
+            z     := Prove(e1, {r}, {d})
             return (V,e0,s,z)
         }
     
         verify((V,e0,s,z), D, P, msg, customlabel) {
-            RG,RB := SP.recommit(e0, {s}, {P,V})
-            e1    := ChallengeHash<.>({"Proof", customlabel}, {RG, RB}, {D, P, V}, msg)
-            RF    := SF.recommit(e1, {z}, {D})
-            e’    := ChallengeHash<.>({"Forgery", customlabel}, {RF}, {D, P, V}, msg)
+            RG,RB := Recommit(e0, {s}, {P,V}, {F0, F1(P,msg)})
+            e1    := ChallengeHash("prove", {RG, RB}, {D, P, V}, msg)
+            RF    := Recommit(e1, {z}, {D}, {F0, F1(P,msg)})
+            e’    := ChallengeHash("forge", {RF}, {D, P, V}, msg)
             if e’ == e0 {
-                h := Compress<.>(32, {customlabel}, {V}, "")
+                h := Compress(32, "", {V}, "")
                 return h
             } else {
                 return nil
@@ -195,49 +170,42 @@ identified by the key pair `D,d` (`D == d·G`).
 
 The following shows a ring version of Schnorr signature, but using compressed signature form (`e,s[0],...,s[n-1]`) to align with unconditionally binding commitments in the [Set Range Proof](#set-range-proof).
 
-    RingSignature = protocol {
-        name:  "RingSignature"
-        group: "Ristretto"
-        xof:   "SHAKE128"
-    
-        sign({P’[i]}, j, x[j], entropy, msg, customization_label) {
-            G := group.base
-            n := len({P’[i]})
-            foreach P’[i] {
-                P[i] := group.decode(P’[i])
-            }
-            Pset := {P[0],...,P[n-1]}
+    protocol RingSignature(customlabel) {
+        name        := "RingSignature"
+        group       := "Ristretto"
+        xof         := "SHAKE128"
+        extralabels := {customlabel}
         
-            {r[i]} := ScalarHash<.>(n, {customization_label}, {entropy, varint(j), x[j]}, Pset, msg)
+        G           := group.base
+        F(x)        := x·G
+        
+        sign({P#n}, j, x[j], entropy, msg) {
+        
+            {r[0],...,r[n-1]} := ScalarHash("", {entropy, varint(j), x[j]}, {P#n}, msg)
             // all but r[0] will be used as forged s-elements
         
             // Precommit
-            R := r[0]·G
-            e[j+1 mod n] := ChallengeHash<.>({customization_label}, {R}, Pset, uint64le(j) || msg)
+            R            := Commit(r[0], {F})
+            e[j+1 mod n] := ChallengeHash(uint64le(j), {R}, {P#n}, msg)
         
             // Forge all other elements
             for step := 1..n-1 {
-                i := (j + step) mod n
-                s[i] := r[step]  // using r[i≠0] as a forged s-element
-                R := s[i]·G - e[i]·P[i]
-                e[i+1 mod n] := ChallengeHash<.>({customization_label}, {R}, Pset, uint64le(i) || msg)
+                i            := (j + step) mod n
+                s[i]         := r[step]  // using r[i≠0] as a forged s-element
+                R            := Recommit(e[i], {s[i]}, {P[i]}, {F}) 
+                e[i+1 mod n] := ChallengeHash(uint64le(i), {R}, {P#n}, msg)
             }
         
             // Sign
-            s[j] := r[0] + e[j]·x[j] mod l
+            s[j] := Prove(e[j], {r[0]}, {x[j]})
             return (e[0], {s[0],...,s[n-1]})
         }
     
-        verify(e, {s[i]}, {P’[i]}, msg, customization_label) {
-            G := group.base
-            foreach P’[i] {
-                P[i] := group.decode(P’[i])
-            }
-            Pset := {P[0],...,P[n-1]}
+        verify(e, {s#n}, {P#n}, msg) {
             e’ := e
             for i := 0..(n-1) {
-                R := s[i]·G - e’·P[i]
-                e’ := ChallengeHash<.>({customization_label}, {R}, Pset, uint64le(i) || msg)
+                R := Recommit(e’, {s[i]}, {P[i]}, {F}) 
+                e’:= ChallengeHash(uint64le(i), {R}, {P#n}, msg)
             }
             return e == e’
         }
@@ -255,65 +223,53 @@ This is a part of the CryptoNote/Monero protocol that is effectively a ring vers
 
 Definition:
 
-    TraceableRingSignature = protocol {
-        name:  "TraceableRingSignature"
-        group: "Ristretto"
-        xof:   "SHAKE128"
+    protocol TraceableRingSignature(customlabel) {
+        name        := "TraceableRingSignature"
+        group       := "Ristretto"
+        xof         := "SHAKE128"
+        extralabels := {customlabel}
         
-        commit(P’, x) {
-            P := group.decode(P’)
-            B := PointHash<.>({}, {P}, "")
-            I := x·B
+        G           := group.base
+        B(P)        := PointHash({}, {P}, "")
+        F0(x)       := x·G
+        F1(P,x)     := x·B(P)
+        
+        commit(P, x) {
+            I := Commit({x}, {F1(P)})
             I’:= group.encode(I)
             return I’
         }
     
-        sign({P’[i]}, j, x[j], entropy, msg, customization_label) {
-            G := group.base
-            n := len({P’[i]})
-            foreach P’[i] {
-                P[i] := group.decode(P’[i])
-            }
-            Pset := {P[0],...,P[n-1]}
-        
-            {r[i]} := ScalarHash<.>(n, {customization_label}, {entropy, varint(j), x[j]}, Pset, msg)
+        sign({P#n}, j, x[j], entropy, msg) {        
+            {r#n} := ScalarHash("", {entropy, varint(j), x[j]}, {P#n}, msg)
             // all but r[0] will be used as forged s-elements
         
             // Precommit
-            B[j]:= PointHash<.>({}, {P[j]}, "")
-            I := x[j]·B[j]
-            RG:= r[0]·G
-            RI:= r[0]·B
-            e[j+1 mod n] := ChallengeHash<.>({customization_label}, {RG, RI}, {I, Pset...}, uint64le(j) || msg)
+            P[j]         := Commit({x}, {F0})
+            I            := Commit({x}, {F1(P[j])})
+            
+            RG,RI        := Commit({r[0]}, {F0, F1(P[j])})
+            e[j+1 mod n] := ChallengeHash(uint64le(j), {RG, RI}, {I, P#n...}, msg)
         
             // Forge all other elements
             for step := 1..n-1 {
-                i := (j + step) mod n
-                s[i] := r[step]  // using r[i≠0] as a forged s-element
-                B[i] := PointHash<.>({}, {P[i]}, "")
-                RG:= s[i]·G    - e[i]·P[i]
-                RI:= s[i]·B[i] - e[i]·I
-                e[i+1 mod n] := ChallengeHash<.>({customization_label}, {RG, RI}, {I, Pset...}, uint64le(i) || msg)
+                i            := (j + step) mod n
+                s[i]         := r[step]  // using r[i≠0] as a forged s-element
+                RG,RI        := Recommit(e[i], {s[i]}, {P[i]}, {F0,F1(P[i])}) 
+                e[i+1 mod n] := ChallengeHash(uint64le(i), {RG, RI}, {I, P#n...}, msg)
             }
         
             // Sign
-            s[j] := r[0] + e[j]·x[j] mod l
+            s[j] := Prove(e[j], {r[0]}, {x[j]})
             return (e[0], {s[0],...,s[n-1]})
         }
     
-        verify(e, {s[i]}, I’, {P’[i]}, msg) {
-            G := group.base
+        verify(e, {s[i]}, I’, {P#n}, msg) {
             I := group.decode(I’)
-            foreach P’[i] {
-                P[i] := group.decode(P’[i])
-            }
-            Pset := {P[0],...,P[n-1]}
             e’ := e
             for i := 0..(n-1) {
-                B[i]:= PointHash<.>({}, {P[i]}, "")
-                RG  := s[i]·G    - e’·P[i]
-                RI  := s[i]·B[i] - e’·I
-                e’  := ChallengeHash<.>({customization_label}, {RG, RI}, {I, Pset...}, uint64le(i) || msg)
+                RG,RI := Recommit(e’, {s[i]}, {P[i]}, {F0,F1(P[i])}) 
+                e’  := ChallengeHash(uint64le(i), {RG, RI}, {I, P#n...}, msg)
             }
             return e == e’
         }
@@ -482,7 +438,7 @@ Definition:
     
         sign(M, î, c’, c[î], {H[i],B[i]}, entropy, msg, label) {
             G := group.base
-            J := Generator<.>("J")
+            J := Generator("J")
         
             // Blind
             H’:= M + c’·G
@@ -498,7 +454,7 @@ Definition:
             F[1](x) := x·J
         
             // Sign
-            return AbstractBRS.sign<.>(
+            return AbstractBRS.sign(
                         {x}, {î}, 
                         {P[t,i,j]}, 
                         {H’,B’,H[0],B[0], ... H[N-1],B[N-1]}, 
@@ -520,7 +476,7 @@ Definition:
             F[1](x) := x·J
         
             // Verify
-            return AbstractBRS.verify<.>(
+            return AbstractBRS.verify(
                         ê, {s[t,i,k]},
                         {P[t,i,j]},
                         {H’,B’,H[0],B[0], ... H[N-1],B[N-1]},
@@ -548,7 +504,7 @@ If the public or private key is stripped of `dk`, it cannot be used to derive or
         xof:   "SHAKE128"
     
         generate(seed) {
-            {x,dk} := ScalarHash<.>(2, {"Generate"}, {seed}, {}, "")
+            {x,dk} := ScalarHash(2, {"Generate"}, {seed}, {}, "")
             return x||dk
         }
     
@@ -563,7 +519,7 @@ If the public or private key is stripped of `dk`, it cannot be used to derive or
         derive_xpub(P1’||dk1, selector) {
             G := group.base
             P1 := group.decode(P1’)
-            {f,dk2} := ScalarHash<.>(2, {"Derive"}, {dk1}, {P1}, selector)
+            {f,dk2} := ScalarHash(2, {"Derive"}, {dk1}, {P1}, selector)
             P2 := P1 + f·G
             P2’:= group.encode(P2)
             return P2’||dk2
@@ -572,7 +528,7 @@ If the public or private key is stripped of `dk`, it cannot be used to derive or
         derive_xprv(x1||dk1, selector) {
             G := group.base
             P1 := x1·G
-            {f,dk2} := ScalarHash<.>(2, {"Derive"}, {dk1}, {P1}, selector)
+            {f,dk2} := ScalarHash(2, {"Derive"}, {dk1}, {P1}, selector)
             x2 := x1 + f mod group.order
             return x2||dk2
         }

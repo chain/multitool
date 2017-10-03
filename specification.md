@@ -125,7 +125,7 @@ An empty labelset is encoded as a 1-byte string containing zero: `0x00`.
 
 A labelset can be extended with the additional labels that customize higher-level protocols:
 
-    AddLabels(labelset, x...) {
+    add_labels(labelset, x...) {
         foreach x {
             verify(len(x) <= 255)
             verify(labelset[0] < 255)
@@ -143,11 +143,13 @@ The framework requires protocol to specify a minimal set of parameters:
         name:  "Schnorr" | "VRF" | ...
         group: "Ristretto" | "Decaf448" | "P256k1" | "P256r1" | ...
         xof:   "SHAKE128" | ...
+        extralabels: {...}
     }
 
 * `protocol.name` - a variable-length string, identifying a protocol name.
 * `protocol.group` - a variable-length string identifying an elliptic curve and related parameters.
 * `protocol.xof` - a variable-length string identifying an extensible-output hash function.
+* `protocol.extralabels` - an additional labelset (could be empty) that customizes the given protocol for the higher-level protocols
 
 Each `group` label defines the following parameters:
 
@@ -164,7 +166,7 @@ XOF takes an input string to be hashed and a number of bytes to be returned:
 
 Each protocol has a [labelset](#labelset) consisting of a single label:
 
-    protocol.labelset = { <name>_<group>_<xof> }  // e.g. {"Schnorr_Ristretto_SHAKE128"}
+    protocol.labelset = { <name>_<group>_<xof>, extralabels... }  // e.g. {"Schnorr_Ristretto_SHAKE128"}
 
 Underscores are used to be compatible with syntax for identifiers in most programming languages.
 
@@ -185,8 +187,8 @@ Commitment strings could be the public keys, various commitments.
 
 Algorithm:
 
-    ScalarHash<protocol>(n, labelset, {x#k}, {C#m}, msg) {
-        labelset’ := AddLabels(protocol.labelset, 'ScalarHash', labelset...)
+    ScalarHash<protocol>(label, {x#k}, {C#m}, msg) -> {r#n} {
+        labelset’ := AddLabels(protocol.labelset, "ScalarHash", label)
         {r[0],...,r[n-1]} := protocol.xof(
                                         labelset’   || 
                                         uint64le(n) || <pad> ||
@@ -204,7 +206,7 @@ Algorithm:
         foreach r[i] {
             r[i] := r[i] mod protocol.group.order
         }
-        return {r[i]}
+        return {r[0],...,r[n-1]}
     }
 
 Rationale:
@@ -222,8 +224,8 @@ Rationale:
 
 Challenge hash produces a single scalar `e` out of random commitments to nonces (`{R[i]}`) bound to the commitments (group elements) and the message (arbitrary-length string).
 
-    ChallengeHash<protocol>(labelset, {R#n}, {C#m}, msg) {
-        labelset’ := AddLabels(protocol.labelset, 'ChallengeHash', labelset...)
+    ChallengeHash<protocol>(label, {R#n}, {C#m}, msg) {
+        labelset’ := AddLabels(protocol.labelset, "ChallengeHash", label)
         e := protocol.xof(
                         labelset’   || <pad> ||
                         uint64le(n) ||
@@ -250,50 +252,12 @@ Rationale:
 3. TBD: repeated labelset adds collision resilience
 4. TBD: extra 16 bytes of XOF output to make bias less than 2^-128 after reducing the scalar mod l.
 
-### Statement Set
-
-A common part of every Sigma-protocol is committing, signing and proving a set of statements about a set of secret scalars.
-The `StatementSet` primitive allows to define such set of statements once and reuse them between commit/sign/prove operations.
-See [examples](examples.md) of how it could be used.
-
-* `n` — number of statements represented with commitment functions.
-* `m` — number of scalars, knowledge of which is being proven.
-* `F({x#m})` is a function that takes `m` scalar arguments and returns a single group element.
-* `{P#n}` — `n` group elements representing a commitment to the secrets. Not always the result of evaluation of `F` functions (e.g. range proofs modify that commitment).
-* `{C}` — an arbitrary number of original commitments to be signed that themselves commit to `{P#n}` (these are specified by the concrete protocol).
-* `msg` — a message string being signed.
-
-Definition:
-
-    StatementSet<protocol>({F({x#m})#n}) {
-        commit({r#m}) {
-            for j := 0..(n-1) {
-                R[j] := F[j]({r#m})
-            }
-            return {R[j]}
-        }
-        prove(e, {r#m}, {x#m}) {
-            for k := 0..(m-1) {
-                s[k] = r[k] + e·x[k] mod protocol.group.order
-            }
-            return {s#m}
-        }
-        recommit(e, {s#m},{P#n}) {
-            for j := 0..n {
-                R[j] := F[j]({s#m}) - e·P[j]
-            }
-            return {R#n}
-        }
-    }
-
-
-
 ### Point Hash
 
 Point hash function hashes a list of commitments and an arbitrary-length message into a group element.
 
-    PointHash<protocol>(labelset, {C[i]}, msg) {
-        labelset’ := AddLabels(protocol.labelset, 'PointHash', labelset...)
+    PointHash<protocol>(label, {C[i]}, msg) {
+        labelset’ := AddLabels(protocol.labelset, "PointHash", label)
         m = len(C)
         h := protocol.xof(
             labelset’ || pad || 
@@ -311,8 +275,8 @@ Point hash function hashes a list of commitments and an arbitrary-length message
 
 Compression hash function uses XOF customized with the protocol’s label set and produces `n`-byte output.
 
-    Compress<protocol>(n, labelset, {C[i]}, msg) {
-        labelset’ := AddLabels(protocol.labelset, 'Compress', labelset...)
+    Compress<protocol>(n, label, {C[i]}, msg) {
+        labelset’ := AddLabels(protocol.labelset, "Compress", label)
         m = len(C)
         h := protocol.xof(
             labelset’   || <pad> ||
@@ -325,6 +289,57 @@ Compression hash function uses XOF customized with the protocol’s label set an
         )
         return h
     }
+
+
+### Commit
+
+A generalized commitment algorithm that applies `m` scalars to `n` functions and returns `m` group elements.
+
+* `n` — number of statements represented by commitment functions.
+* `m` — number of scalars, knowledge of which is being proven.
+* `F({x#m})` is a function that takes `m` scalar arguments and returns a single group element.
+
+Definition:
+
+    Commit({r#m}, {F({x#m})#n}) {
+        for j := 0..(n-1) {
+            R[j] := F[j]({r#m})
+        }
+        return {R[j]}
+    }
+
+### Prove
+
+_Prove_ blinds `m` secret scalars `{x}` with secret nonces `{r}` using a challenge hash `e`.
+
+    Prove<protocol>(e, {r#m}, {x#m}) {
+        for k := 0..(m-1) {
+            s[k] = r[k] + e·x[k] mod protocol.group.order
+        }
+        return {s#m}
+    }
+
+
+### Recommit
+
+_Recommit_ reconstructs the commitments to `n` random nonces produced by _Commit_ using `m` signature elements `{s}`, challenge hash `e` and commitments to secrets `{P}`.
+
+* `n` — number of statements represented with commitment functions.
+* `m` — number of scalars, knowledge of which is being proven.
+* `F({x#m})` is a function that takes `m` scalar arguments and returns a single group element.
+* `{P#n}` — `n` group elements representing a commitment to the secrets. Not always the result of evaluation of `F` functions (e.g. range proofs modify that commitment).
+
+Definition:
+
+    Recommit(e, {s#m}, {P#n}, {F({x#m})#n}) {
+        for j := 0..n {
+            R[j] := F[j]({s#m}) - e·P[j]
+        }
+        return {R#n}
+    }
+
+
+
 
 ## Ristretto Specification
 

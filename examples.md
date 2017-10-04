@@ -46,21 +46,19 @@ Definition:
         
         genkey(entropy) {
             x := ScalarHash("", {entropy}, {}, "")
-            P := Commit(x, {F})
+            P := F(x)
             return (P, x)
         }
     
         sign(x, entropy, P, msg) {
-            r := ScalarHash("", {entropy,x}, {P}, msg)
-            R := Commit(r, {F})
-            e := ChallengeHash("", {R}, {P}, msg)
-            s := Prove(e, {r}, {x})
+            e,r,R := Commit("", {F}, {entropy,x}, {P}, msg)
+            s     := Prove(e, {r}, {x})
             return (R,s)
         }
     
         verify(R, s, P, msg) {
-            e := ChallengeHash("", {R}, {P}, msg)
-            R’:= Recommit(e, {s}, {P}, {F})
+            e    := ChallengeHash("", {R}, {P}, msg)
+            _,R’ := Recommit("", {F}, e, {s}, {P}, {}, msg)
             return group.equal(R, R’)
         }
     }
@@ -82,23 +80,21 @@ Simple VRF maps an arbitrary-length string `msg` to a verifiably random outut ke
         F1(P,msg,x) := x·B(P,msg)
         
         commit(x, P, msg) {
-            V   := Commit(x, {F1(P,msg)})
+            V   := F1(P,msg,x)
             h   := Compress(32, "", {V}, "")
             return h
         }
     
         sign(x, P, entropy, msg) {
-            P, V  := Commit(x, {F0, F1(P,msg)})
-            r     := ScalarHash("", {entropy,x}, {P, V}, msg)
-            RG,RB := Commit(r, {F0, F1(P,msg)})
-            e     := ChallengeHash("", {RG, RB}, {P, V}, msg)
-            s     := Prove(e, {r}, {x})
+            P       := F0(x)
+            V       := F1(P,msg,x)
+            e,r,_,_ := Commit("", {F0, F1(P,msg)}, {entropy,x}, {P,V}, msg)
+            s       := Prove(e, {r}, {x})
             return (V,e,s)
         }
     
         verify((V,e,s), P, msg) {
-            RG,RB := Recommit(e, {s}, {P,V}, {F0, F1(P,msg)})
-            e’    := ChallengeHash("", {RG, RB}, {P, V}, msg)
+            e’,_,_ := Recommit("", {F0, F1(P,msg)}, e, {s}, {P,V}, {}, msg)
             if e’ == e {
                 h := Compress(32, "", {V}, "")
                 return h
@@ -313,7 +309,7 @@ Definition:
         
         sign<protocol>({x[t,k]}, {î[t]}, {P[t,i,j]}, {C}, {F[j]({x[k]})}, entropy, msg, label) {
             // Generate NR·NI·NX random scalars
-            {r[t,i,k]} := ScalarHash<protocol>(NR·NI·NX, {label}, {entropy, x[0,0],...,x[NR-1,NX-1], î[0],...,î[NR-1]}, {C}, msg)
+            {r[t,i,k]} := ScalarHash<protocol>(label, {entropy, x[0,0],...,x[NR-1,NX-1], î[0],...,î[NR-1]}, {C}, msg)
         
             // Precommit
             for t := 0..(NR-1) {
@@ -322,7 +318,7 @@ Definition:
                     R[t,i,j] := F[j](r[t,i,0], ..., r[t,i,NX-1])
                 }
                 e[t, i+1 mod NI] := ChallengeHash<protocol>(
-                                        {label},
+                                        label,
                                         // points are doubled to take advantage of Doppio, a batchable variant of Ristretto encoding
                                         {2·R[t,i,0],...,2·R[t,i,NS-1]},
                                         {C}, uint64le(t) || uint64le(i) || msg
@@ -339,7 +335,7 @@ Definition:
                         R[t,i,j] := F[j](s[t,i,0], ..., s[t,i,NX-1]) - e[t,i]·P[t,i,j]
                     }
                     e[t, i+1 mod NI] := ChallengeHash<protocol>(
-                                            {label},
+                                            label,
                                             {2·R[t,i,0],...,2·R[t,i,NS-1]},
                                             {C}, uint64le(t) || uint64le(i) || msg
                                         )
@@ -351,7 +347,7 @@ Definition:
                 // special case for 1 ring to avoid unnecessary double-hashing
                 ê := e[0,0]
             } else {
-                ê := Compress<protocol>(32, {label}, {}, e[0,0] || ... || e[NR-1,0])
+                ê := ChallengeHash<protocol>(label, {}, e[0,0] || ... || e[NR-1,0])
             }
             
         
@@ -366,7 +362,7 @@ Definition:
                         R[t,i,j] := F[j](s[t,i,0], ..., s[t,i,NX-1]) - e[t,i]·P[t,i,j]
                     }
                     e[t, i+1 mod NI] := ChallengeHash<protocol>(
-                                            {label},
+                                            label,
                                             {2·R[t,i,0],...,2·R[t,i,NS-1]},
                                             {C}, uint64le(t) || uint64le(i) || msg
                                         )
@@ -392,7 +388,7 @@ Definition:
                         R[t,i,j] := F[j](s[t,i,0], ..., s[t,i,NX-1]) - e[t,0]·P[t,i,j]
                     }
                     e[t, i+1 mod NI] := ChallengeHash<protocol>(
-                                            {label},
+                                            label,
                                             // points are doubled to take advantage of Doppio, a batchable variant of Ristretto encoding
                                             {2·R[t,i,0],...,2·R[t,i,NS-1]},
                                             {C},
@@ -404,7 +400,7 @@ Definition:
                 // special case for 1 ring to avoid unnecessary double-hashing
                 e’ := e[0,0]
             } else {
-                e’ := Compress<protocol>(32, {label}, {}, e[0,0] || ... || e[NR-1,0])
+                e’ := ChallengeHash<protocol>(label, {}, e[0,0] || ... || e[NR-1,0])
             }
             return ê == e’
         }

@@ -301,11 +301,13 @@ A generalized commitment algorithm that applies `m` scalars to `n` functions and
 
 Definition:
 
-    Commit({r#m}, {F({x#m})#n}) {
+    Commit(label, {F({x#m})#n}, {x}, {C}, msg) {
+        {r#m} := ScalarHash(label, {x}, {C}, msg)
         for j := 0..(n-1) {
             R[j] := F[j]({r#m})
         }
-        return {R[j]}
+        e := ChallengeHash(label, {R#n}, {C}, msg)
+        return e, {r#m}, {R#n}
     }
 
 ### Prove
@@ -331,11 +333,12 @@ _Recommit_ reconstructs the commitments to `n` random nonces produced by _Commit
 
 Definition:
 
-    Recommit(e, {s#m}, {P#n}, {F({x#m})#n}) {
+    Recommit(label, {F({x#m})#n}, e, {s#m}, {P#n}, {C}, msg) {
         for j := 0..n {
             R[j] := F[j]({s#m}) - e·P[j]
         }
-        return {R#n}
+        e := ChallengeHash(label, {R#n}, {P#n..., C...}, msg)
+        return e, {R#n}
     }
 
 

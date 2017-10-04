@@ -154,7 +154,7 @@ identified by the key pair `D,d` (`D == d·G`).
         verify((V,e0,s,z), D, P, msg) {
             RG,RB := Recommit(e0, {s}, {P,V}, {F0, F1(P,msg)})
             e1    := ChallengeHash("prove", {RG, RB}, {D, P, V}, msg)
-            RF    := Recommit(e1, {z}, {D}, {F0, F1(P,msg)})
+            RF    := Recommit(e1, {z}, {D}, {F0})
             e’    := ChallengeHash("forge", {RF}, {D, P, V}, msg)
             if e’ == e0 {
                 h := Compress(32, "", {V}, "")

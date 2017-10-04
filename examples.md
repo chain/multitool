@@ -96,7 +96,7 @@ Simple VRF maps an arbitrary-length string `msg` to a verifiably random outut ke
             return (V,e,s)
         }
     
-        verify((V,e,s), P, customlabel, msg) {
+        verify((V,e,s), P, msg) {
             RG,RB := Recommit(e, {s}, {P,V}, {F0, F1(P,msg)})
             e’    := ChallengeHash("", {RG, RB}, {P, V}, msg)
             if e’ == e {
@@ -124,13 +124,13 @@ identified by the key pair `D,d` (`D == d·G`).
         F0(x)       := x·G
         F1(P,msg,x) := x·B(P,msg)
         
-        commit(x, customlabel, P, msg) {
+        commit(x, P, msg) {
             V := Commit(x, F1(P,msg))
             h := Compress(32, "", {V}, "")
             return h
         }
     
-        sign(D, P, x, entropy, customlabel, msg) {
+        sign(D, P, x, entropy, msg) {
             P, V  := Commit(x, {F0, F1(P,msg)})
             {r,z} := ScalarHash("", {entropy,x}, {D, P, V}, msg)
             RG,RB := Commit(r, {F0, F1(P,msg)})
@@ -151,7 +151,7 @@ identified by the key pair `D,d` (`D == d·G`).
             return (V,e0,s,z)
         }
     
-        verify((V,e0,s,z), D, P, msg, customlabel) {
+        verify((V,e0,s,z), D, P, msg) {
             RG,RB := Recommit(e0, {s}, {P,V}, {F0, F1(P,msg)})
             e1    := ChallengeHash("prove", {RG, RB}, {D, P, V}, msg)
             RF    := Recommit(e1, {z}, {D}, {F0, F1(P,msg)})

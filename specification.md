@@ -273,20 +273,11 @@ Point hash function hashes a list of commitments and an arbitrary-length message
 
 ### Compress
 
-Compression hash function uses XOF customized with the protocol’s label set and produces `n`-byte output.
+Compression hash function uses XOF customized with the protocol’s label set and produces a 32-byte output.
 
-    Compress<protocol>(n, label, {C[i]}, msg) {
+    Compress<protocol>(label, msg) {
         labelset’ := AddLabels(protocol.labelset, "Compress", label)
-        m = len(C)
-        h := protocol.xof(
-            labelset’   || <pad> ||
-            uint64le(m) ||
-            protocol.group.encode(C[0])   ||
-            ...
-            protocol.group.encode(C[m-1]) ||
-            msg,
-            n
-        )
+        h := protocol.xof(labelset’ || <pad> || msg, 32)
         return h
     }
 

@@ -81,7 +81,7 @@ Simple VRF maps an arbitrary-length string `msg` to a verifiably random outut ke
         
         commit(x, P, msg) {
             V := F1(P,msg,x)
-            h := Compress(32, "", {V}, "")
+            h := Compress("", group.encode(V))
             return h
         }
     
@@ -96,7 +96,7 @@ Simple VRF maps an arbitrary-length string `msg` to a verifiably random outut ke
         verify((V,e,s), P, msg) {
             e’,_,_ := Recommit("", {F0, F1(P,msg)}, e, {s}, {P,V}, {}, msg)
             if e’ == e {
-                h := Compress(32, "", {V}, "")
+                h := Compress("", group.encode(V))
                 return h
             } else {
                 return nil
@@ -122,7 +122,7 @@ identified by the key pair `D,d` (`D == d·G`).
         
         commit(x, P, msg) {
             V := F1(P,msg,x)
-            h := Compress(32, "", {V}, "")
+            h := Compress("", group.encode(V))
             return h
         }
     
@@ -148,7 +148,7 @@ identified by the key pair `D,d` (`D == d·G`).
             e1,_,_ := Recommit("prove", {F0, F1(P,msg)}, e0, {s}, {P,V}, {D}, msg)
             e’,_   := Recommit("forge", {F0}, e1, {z}, {D}, {P,V}, msg)
             if e’ == e0 {
-                h := Compress(32, "", {V}, "")
+                h := Compress("", group.encode(V))
                 return h
             } else {
                 return nil

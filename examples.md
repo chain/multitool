@@ -80,8 +80,8 @@ Simple VRF maps an arbitrary-length string `msg` to a verifiably random outut ke
         F1(P,msg,x) := x·B(P,msg)
         
         commit(x, P, msg) {
-            V   := F1(P,msg,x)
-            h   := Compress(32, "", {V}, "")
+            V := F1(P,msg,x)
+            h := Compress(32, "", {V}, "")
             return h
         }
     
@@ -121,37 +121,32 @@ identified by the key pair `D,d` (`D == d·G`).
         F1(P,msg,x) := x·B(P,msg)
         
         commit(x, P, msg) {
-            V := Commit(x, F1(P,msg))
+            V := F1(P,msg,x)
             h := Compress(32, "", {V}, "")
             return h
         }
     
         sign(D, P, x, entropy, msg) {
-            P, V  := Commit(x, {F0, F1(P,msg)})
-            {r,z} := ScalarHash("", {entropy,x}, {D, P, V}, msg)
-            RG,RB := Commit(r, {F0, F1(P,msg)})
-            e1    := ChallengeHash("prove", {RG, RB}, {D, P, V}, msg)
-            RF    := Recommit(e1, {z}, {D}, {F0})
-            e0    := ChallengeHash("forge", {RF}, {D, P, V}, msg)
-            s     := Prove(e0, {r}, {x})
+            P        := F0(x)
+            V        := F1(P,msg,x)
+            e1,r,_,_ := Commit("prove", {F0, F1(P,msg)}, {entropy,x}, {D,P,V}, msg)
+            z        := ScalarHash("verifier signature forgery", {entropy,x}, {D,P,V}, msg)
+            e0,_     := Recommit("forge", {F0}, e1, {z}, {D}, {P,V}, msg)
+            s        := Prove(e0, {r}, {x})
             return (V,e0,s,z)
         }
     
         forge(D, P, V, d, entropy, msg) {
-            {r,s} := ScalarHash("", {entropy,d}, {D, P, V}, msg)
-            RF    := Commit(r, {F0})
-            e0    := ChallengeHash("forge", {RF}, {D, P, V}, msg)
-            RG,RB := Recommit(e0, {s}, {P,V}, {F0, F1(P,msg)})
-            e1    := ChallengeHash("prove", {RG, RB}, {D, P, V}, msg)
-            z     := Prove(e1, {r}, {d})
+            e0,r,_ := Commit("forge", {F0}, {entropy,d}, {D,P,V}, msg)
+            s      := ScalarHash("signer signature forgery", {entropy,d}, {D,P,V}, msg)
+            e1,_,_ := Recommit("prove", {F0, F1(P,msg)}, e0, {s}, {P,V}, {D}, msg)
+            z      := Prove(e1, {r}, {d})
             return (V,e0,s,z)
         }
-    
+        
         verify((V,e0,s,z), D, P, msg) {
-            RG,RB := Recommit(e0, {s}, {P,V}, {F0, F1(P,msg)})
-            e1    := ChallengeHash("prove", {RG, RB}, {D, P, V}, msg)
-            RF    := Recommit(e1, {z}, {D}, {F0})
-            e’    := ChallengeHash("forge", {RF}, {D, P, V}, msg)
+            e1,_,_ := Recommit("prove", {F0, F1(P,msg)}, e0, {s}, {P,V}, {D}, msg)
+            e’,_   := Recommit("forge", {F0}, e1, {z}, {D}, {P,V}, msg)
             if e’ == e0 {
                 h := Compress(32, "", {V}, "")
                 return h

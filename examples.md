@@ -488,7 +488,7 @@ If the public or private key is stripped of `dk`, it cannot be used to derive or
         xof:   "SHAKE128"
     
         generate(seed) {
-            {x,dk} := ScalarHash(2, {"Generate"}, {seed}, {}, "")
+            {x,dk} := ScalarHash("Generate", {seed}, {}, "")
             return x||dk
         }
     
@@ -503,7 +503,7 @@ If the public or private key is stripped of `dk`, it cannot be used to derive or
         derive_xpub(P1’||dk1, selector) {
             G := group.base
             P1 := group.decode(P1’)
-            {f,dk2} := ScalarHash(2, {"Derive"}, {dk1}, {P1}, selector)
+            {f,dk2} := ScalarHash("Derive", {dk1}, {P1}, selector)
             P2 := P1 + f·G
             P2’:= group.encode(P2)
             return P2’||dk2
@@ -512,13 +512,14 @@ If the public or private key is stripped of `dk`, it cannot be used to derive or
         derive_xprv(x1||dk1, selector) {
             G := group.base
             P1 := x1·G
-            {f,dk2} := ScalarHash(2, {"Derive"}, {dk1}, {P1}, selector)
+            {f,dk2} := ScalarHash("Derive", {dk1}, {P1}, selector)
             x2 := x1 + f mod group.order
             return x2||dk2
         }
     
         derive_hardened(x||dk, selector) {
-            return generate(x||dk||selector)
+            {x’,dk’} := ScalarHash("DeriveH", {x,dk}, {}, selector)
+            return x’||dk’
         }
     }
 

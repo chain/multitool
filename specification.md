@@ -321,6 +321,7 @@ _Recommit_ reconstructs the commitments to `n` random nonces produced by _Commit
 * `m` — number of scalars, knowledge of which is being proven.
 * `F({x#m})` is a function that takes `m` scalar arguments and returns a single group element.
 * `{P#n}` — `n` group elements representing a commitment to the secrets. Not always the result of evaluation of `F` functions (e.g. range proofs modify that commitment).
+* `{C}` — all group elements to commit to (usually include all of `{P#n}` directly or indirectly).
 
 Definition:
 
@@ -328,7 +329,7 @@ Definition:
         for j := 0..n {
             R[j] := F[j]({s#m}) - e·P[j]
         }
-        e := ChallengeHash(label, {R#n}, {P#n..., C...}, msg)
+        e := ChallengeHash(label, {R#n}, {C}, msg)
         return e, {R#n}
     }
 

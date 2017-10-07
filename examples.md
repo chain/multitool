@@ -58,7 +58,7 @@ Definition:
     
         verify(R, s, P, msg) {
             e    := ChallengeHash("", {R}, {P}, msg)
-            _,R’ := Recommit("", {F}, e, {s}, {P}, {}, msg)
+            _,R’ := Recommit("", {F}, e, {s}, {P}, {P}, msg)
             return group.equal(R, R’)
         }
     }
@@ -94,7 +94,7 @@ Simple VRF maps an arbitrary-length string `msg` to a verifiably random outut ke
         }
     
         verify((V,e,s), P, msg) {
-            e’,_,_ := Recommit("", {F0, F1(P,msg)}, e, {s}, {P,V}, {}, msg)
+            e’,_,_ := Recommit("", {F0, F1(P,msg)}, e, {s}, {P,V}, {P,V}, msg)
             if e’ == e {
                 h := Compress("", group.encode(V))
                 return h
@@ -129,9 +129,9 @@ identified by the key pair `D,d` (`D == d·G`).
         sign(D, P, x, entropy, msg) {
             P        := F0(x)
             V        := F1(P,msg,x)
-            e1,r,_,_ := Commit("prove", {F0, F1(P,msg)}, {entropy,x}, {P,V,D}, msg)
+            e1,r,_,_ := Commit("prove", {F0, F1(P,msg)}, {entropy,x}, {D,P,V}, msg)
             z        := ScalarHash("verifier signature forgery", {entropy,x}, {D,P,V}, msg)
-            e0,_     := Recommit("forge", {F0}, e1, {z}, {D}, {P,V}, msg)
+            e0,_     := Recommit("forge", {F0}, e1, {z}, {D}, {D,P,V}, msg)
             s        := Prove(e0, {r}, {x})
             return (V,e0,s,z)
         }
@@ -139,14 +139,14 @@ identified by the key pair `D,d` (`D == d·G`).
         forge(D, P, V, d, entropy, msg) {
             e0,r,_ := Commit("forge", {F0}, {entropy,d}, {D,P,V}, msg)
             s      := ScalarHash("signer signature forgery", {entropy,d}, {D,P,V}, msg)
-            e1,_,_ := Recommit("prove", {F0, F1(P,msg)}, e0, {s}, {P,V}, {D}, msg)
+            e1,_,_ := Recommit("prove", {F0, F1(P,msg)}, e0, {s}, {P,V}, {D,P,V}, msg)
             z      := Prove(e1, {r}, {d})
             return (V,e0,s,z)
         }
         
         verify((V,e0,s,z), D, P, msg) {
-            e1,_,_ := Recommit("prove", {F0, F1(P,msg)}, e0, {s}, {P,V}, {D}, msg)
-            e’,_   := Recommit("forge", {F0}, e1, {z}, {D}, {P,V}, msg)
+            e1,_,_ := Recommit("prove", {F0, F1(P,msg)}, e0, {s}, {P,V}, {D,P,V}, msg)
+            e’,_   := Recommit("forge", {F0}, e1, {z}, {D}, {D,P,V}, msg)
             if e’ == e0 {
                 h := Compress("", group.encode(V))
                 return h
@@ -171,32 +171,25 @@ The following shows a ring version of Schnorr signature, but using compressed si
         F(x)        := x·G
         
         sign({P#n}, j, x[j], entropy, msg) {
-        
-            {r[0],...,r[n-1]} := ScalarHash("", {entropy, varint(j), x[j]}, {P#n}, msg)
-            // all but r[0] will be used as forged s-elements
-        
             // Precommit
-            R            := Commit(r[0], {F})
-            e[j+1 mod n] := ChallengeHash(uint64le(j), {R}, {P#n}, msg)
+            e[j+1 mod n],r,_ := Commit(uint64le(j), {F}, {entropy, x[j]}, {P#n}, msg)
         
             // Forge all other elements
+            {z[0],...,z[n-2]} := ScalarHash("forged signatures", {entropy, varint(j), x[j]}, {P#n}, msg)
             for step := 1..n-1 {
-                i            := (j + step) mod n
-                s[i]         := r[step]  // using r[i≠0] as a forged s-element
-                R            := Recommit(e[i], {s[i]}, {P[i]}, {F}) 
-                e[i+1 mod n] := ChallengeHash(uint64le(i), {R}, {P#n}, msg)
+                i              := (j + step) mod n
+                s[i]           := z[step-1] // forged elements
+                e[i+1 mod n],_ := Recommit(uint64le(i), {F}, e[i], {s[i]}, {P[i]}, {P#n}, msg)
             }
-        
             // Sign
-            s[j] := Prove(e[j], {r[0]}, {x[j]})
+            s[j] := Prove(e[j], {r}, {x[j]})
             return (e[0], {s[0],...,s[n-1]})
         }
     
         verify(e, {s#n}, {P#n}, msg) {
             e’ := e
             for i := 0..(n-1) {
-                R := Recommit(e’, {s[i]}, {P[i]}, {F}) 
-                e’:= ChallengeHash(uint64le(i), {R}, {P#n}, msg)
+                e’,_ := Recommit(uint64le(i), {F}, e’, {s[i]}, {P[i]}, {P#n}, msg) 
             }
             return e == e’
         }

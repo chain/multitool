@@ -129,7 +129,7 @@ identified by the key pair `D,d` (`D == d·G`).
         sign(D, P, x, entropy, msg) {
             P        := F0(x)
             V        := F1(P,msg,x)
-            e1,r,_,_ := Commit("prove", {F0, F1(P,msg)}, {entropy,x}, {D,P,V}, msg)
+            e1,r,_,_ := Commit("prove", {F0, F1(P,msg)}, {entropy,x}, {P,V,D}, msg)
             z        := ScalarHash("verifier signature forgery", {entropy,x}, {D,P,V}, msg)
             e0,_     := Recommit("forge", {F0}, e1, {z}, {D}, {P,V}, msg)
             s        := Prove(e0, {r}, {x})

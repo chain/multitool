@@ -1,4 +1,4 @@
-# Lungo (DRAFT)
+# Multitool (DRAFT)
 
 The public key cryptography framework.
 
@@ -27,12 +27,10 @@ hierarchical key derivation schemes share a few common bits that must be done co
 to ensure safety and avoid common pitfalls. Things like nonce generation, key derivation,
 fiat-shamir challenge generation etc.
 
-**Lungo** is a framework that allows building such zero-knowledge schemes in a safe and
-straightforward manner. Lungo is generalized to any prime order group where DLP is hard, but
-also has an instance “with batteries included” which uses a high-performance Ristretto group based on Curve25519.
+**Multitool** is a framework that allows building such zero-knowledge schemes in a safe and
+straightforward manner. Multitool is generalized to any prime order group where DLP is hard,
+but also has an instance “with batteries included” which uses a high-performance [Ristretto](#ristretto-specification) group based on Curve25519.
 
-The name **Lungo** comes from the “opposite of ristretto”, meaning, the opposite of _restricting_ it to any specific scheme or group.
-Not to be confused with Ristretto group (used together with Lungo), which _restricts_ Decaf scheme to edwards curves with cofactor 8.
 
 ## Overview
 

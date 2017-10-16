@@ -1,4 +1,4 @@
-# Lungo
+# Multitool
 
 The next-generation public key cryptography framework.
 

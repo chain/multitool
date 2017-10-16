@@ -1,4 +1,4 @@
-# Lungo Examples
+# Multitool Examples
 
 **WARNING: this is a draft document and the examples come without security proofs. Beware of typos and vulnerabilities.**
 

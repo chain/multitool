@@ -75,9 +75,8 @@ Simple VRF maps an arbitrary-length string `msg` to a verifiably random outut ke
         extralabels := {customlabel}
         
         G           := group.base
-        B(P,msg)    := PointHash("", {P}, msg)
         F0(x)       := x·G
-        F1(P,msg,x) := x·B(P,msg)
+        F1(P,msg,x) := x·PointHash("", {P}, msg)
         
         commit(x, P, msg) {
             V := F1(P,msg,x)
@@ -116,9 +115,8 @@ identified by the key pair `D,d` (`D == d·G`).
         extralabels := {customlabel}
         
         G           := group.base
-        B(P,msg)    := PointHash("", {P}, msg)
         F0(x)       := x·G
-        F1(P,msg,x) := x·B(P,msg)
+        F1(P,msg,x) := x·PointHash("", {P}, msg)
         
         commit(x, P, msg) {
             V := F1(P,msg,x)
